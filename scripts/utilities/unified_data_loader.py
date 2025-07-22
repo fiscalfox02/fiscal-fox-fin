@@ -184,7 +184,7 @@ class FiscalFoxUIDGenerator:
         
         return networth_snapshot
     
-def _extract_epf_holdings(self, master_uid, epf_data):
+    def _extract_epf_holdings(self, master_uid, epf_data):
     """Extract EPF holdings with robust error handling for inconsistent data structure"""
     
     epf_holdings = []
