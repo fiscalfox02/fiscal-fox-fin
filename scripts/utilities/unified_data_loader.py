@@ -184,27 +184,45 @@ class FiscalFoxUIDGenerator:
         
         return networth_snapshot
     
-    def _extract_epf_holdings(self, master_uid, epf_data):
-        """Extract EPF holdings in BigQuery-ready format"""
-        
-        epf_holdings = []
-        establishments = epf_data['uanAccounts'][0]['rawDetails']['est_details']
-        
-        for est in establishments:
+def _extract_epf_holdings(self, master_uid, epf_data):
+    """Extract EPF holdings with robust error handling for inconsistent data structure"""
+    
+    epf_holdings = []
+    establishments = epf_data['uanAccounts'][0]['rawDetails']['est_details']
+    
+    for est in establishments:
+        try:
+            # Handle inconsistent pf_balance structure
+            pf_balance = est.get('pf_balance', {})
+            employee_share = pf_balance.get('employee_share', {})
+            employer_share = pf_balance.get('employer_share', {})
+            
+            # Use credit as fallback for balance if balance is missing
+            employee_balance = float(employee_share.get('balance', employee_share.get('credit', 0)))
+            employer_balance = float(employer_share.get('balance', employer_share.get('credit', 0)))
+            
             holding = {
                 'master_uid': master_uid,
-                'establishment_name': est['est_name'],
-                'member_id': est['member_id'],
-                'office': est['office'],
-                'total_balance': float(est['pf_balance']['net_balance']),
-                'employee_share': float(est['pf_balance']['employee_share']['balance']),
-                'employer_share': float(est['pf_balance']['employer_share']['balance']),
-                'date_of_joining': est['doj_epf'],
-                'date_of_exit': est['doe_epf']
+                'establishment_name': est.get('est_name', 'Unknown'),
+                'member_id': est.get('member_id', 'Unknown'),
+                'office': est.get('office', 'Unknown'),
+                'total_balance': float(pf_balance.get('net_balance', 0)),
+                'employee_share': employee_balance,
+                'employer_share': employer_balance,
+                'date_of_joining': est.get('doj_epf', ''),
+                'date_of_exit': est.get('doe_epf', ''),
+                'date_of_exit_eps': est.get('doe_eps', '')
             }
+            
             epf_holdings.append(holding)
-        
-        return epf_holdings
+            print(f"✓ Processed EPF: {est.get('est_name')} (Balance: ₹{holding['total_balance']:,.0f})")
+            
+        except Exception as e:
+            print(f"⚠Error processing EPF establishment {est.get('est_name', 'Unknown')}: {e}")
+            continue
+    
+    return epf_holdings
+
     
     def _extract_mf_transactions(self, master_uid, mf_data):
         """Extract MF transactions in BigQuery-ready format"""
