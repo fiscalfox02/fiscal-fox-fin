@@ -651,7 +651,7 @@ class FiscalFoxNetWorthAnalyzer:
     def run_comprehensive_analysis(self):
         """Main analysis function"""
         print("Starting Fiscal Fox Net Worth Analysis...")
-        print("=" * 60)
+        
         
         # Load data
         print(f"\nLoading data for {self.master_uid}...")
