@@ -2,7 +2,7 @@ cat > scripts/database/populate_test_data.sh << 'EOF'
 #!/bin/bash
 set -e
 
-echo "🧪 Populating Goal Engine Test Data"
+echo " Populating Goal Engine Test Data"
 
 PROJECT_ID=${PROJECT_ID:-"fiscal-fox-fin"}
 DATASET_ID="fiscal_master_dw"
@@ -17,15 +17,15 @@ fi
 # Set project
 gcloud config set project $PROJECT_ID
 
-echo "Creating tables if they don't exist..."
+echo " Creating tables if they don't exist..."
 bq query --use_legacy_sql=false < tests/sql/bigquery/create_goal_tables.sql
 
 echo "Inserting test data into goal_calculation_inputs..."
 bq query --use_legacy_sql=false < tests/sql/bigquery/insert_test_data.sql
 
-echo " Test data inserted successfully"
+echo "Test data inserted successfully"
 
-echo " Validating data insertion..."
+echo "Validating data insertion..."
 bq query --use_legacy_sql=false < tests/sql/validation/verify_goal_calculations.sql
 
 echo " Validation complete"
