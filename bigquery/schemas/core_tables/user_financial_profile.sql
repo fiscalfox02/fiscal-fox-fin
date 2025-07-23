@@ -35,7 +35,4 @@ OPTIONS(
   description="Financial profile for goal planning with Master UID as placeholder",
   labels=[("module", "goal_setting"), ("data_type", "user_profile")]
 );
-<<<<<<< HEAD
-=======
-EOF
->>>>>>> 5f9b84ac9dd82682d2b10455f8fdc38ffad3ba45
+
