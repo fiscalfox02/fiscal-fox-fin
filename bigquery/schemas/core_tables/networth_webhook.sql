@@ -1,5 +1,5 @@
 -- Net Worth Webhook Cache Table for Quick API Access
-CREATE TABLE IF NOT EXISTS `fiscal-fox-in.fiscal_master_dw.networth_webhook` (
+CREATE TABLE IF NOT EXISTS `fiscal-fox-fin.fiscal_master_dw.networth_webhook` (
   master_uid STRING NOT NULL OPTIONS(description="User identifier"),
   latest_analysis_id STRING OPTIONS(description="Most recent net worth analysis ID"),
   latest_net_worth FLOAT64 OPTIONS(description="Latest net worth value"),
