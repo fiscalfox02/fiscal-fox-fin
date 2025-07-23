@@ -22,7 +22,7 @@ warnings.filterwarnings('ignore')
 class FiscalFoxNetWorthAnalyzer:
     def __init__(self, master_uid: str = "ff_user_8a838f3528819407", enable_privacy: bool = True):
         self.master_uid = master_uid
-        self.project_id = "fiscal-fox-in"
+        self.project_id = "fiscal-fox-fin"
         self.dataset_id = "fiscal_master_dw"
         self.enable_privacy = enable_privacy
         self.data = {}
@@ -734,10 +734,10 @@ class FiscalFoxNetWorthAnalyzer:
 def get_latest_networth_results(master_uid: str = "ff_user_8a838f3528819407"):
     """Webhook function to get latest net worth results"""
     
-    client = bigquery.Client(project="fiscal-fox-in")
+    client = bigquery.Client(project="fiscal-fox-fin")
     
     query = f"""
-        SELECT * FROM `fiscal-fox-in.fiscal_master_dw.networth_webhook`
+        SELECT * FROM `fiscal-fox-fin.fiscal_master_dw.networth_webhook`
         WHERE master_uid = @master_uid
     """
     
