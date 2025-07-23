@@ -1,5 +1,5 @@
 -- Net Worth Analysis Results Table
-CREATE TABLE IF NOT EXISTS `fiscal-fox-in.fiscal_master_dw.networth_results` (
+CREATE TABLE IF NOT EXISTS `fiscal-fox-fin.fiscal_master_dw.networth_results` (
   master_uid STRING NOT NULL OPTIONS(description="User identifier from user_master table"),
   analysis_id STRING NOT NULL OPTIONS(description="Unique net worth analysis run identifier"),
   analysis_timestamp TIMESTAMP NOT NULL OPTIONS(description="When net worth analysis was performed"),
