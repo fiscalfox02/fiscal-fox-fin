@@ -2,7 +2,7 @@
 set -e
 
 echo " Deploying Fiscal Fox Goal Setting Tables"
-PROJECT_ID=${PROJECT_ID:-"pro-kayak-466708-a9"}
+PROJECT_ID=${PROJECT_ID:-"fiscal-fox-fin"}
 MASTER_UID="ff_user_8a838f3528819407"
 
 echo " Creating goal setting tables..."
