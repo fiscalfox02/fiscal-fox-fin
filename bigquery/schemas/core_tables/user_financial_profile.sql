@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+# Create user_financial_profile.sql
+cat > bigquery/schemas/core_tables/user_financial_profile.sql << 'EOF'
+>>>>>>> 5f9b84ac9dd82682d2b10455f8fdc38ffad3ba45
 -- User Financial Profile Table
 -- Stores aggregated financial metrics for goal planning
 -- Master UID: ff_user_8a838f3528819407 (placeholder for any user)
@@ -34,3 +39,7 @@ OPTIONS(
   description="Financial profile for goal planning with Master UID as placeholder",
   labels=[("module", "goal_setting"), ("data_type", "user_profile")]
 );
+<<<<<<< HEAD
+=======
+EOF
+>>>>>>> 5f9b84ac9dd82682d2b10455f8fdc38ffad3ba45
