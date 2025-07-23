@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS `${PROJECT_ID}.fiscal_master_dw.user_goals_enhanced` 
   goal_id STRING NOT NULL,
   goal_type STRING NOT NULL,             -- 'timeline', 'recurring', 'emergency', 'investment', 'micro'
   goal_name STRING,
-  goal_description TEXT,
+  goal_description STRING,
   
   -- Timeline Goal Parameters (your amortization logic)
   target_date DATE,
