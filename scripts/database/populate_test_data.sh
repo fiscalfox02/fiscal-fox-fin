@@ -1,4 +1,3 @@
-cat > scripts/database/populate_test_data.sh << 'EOF'
 #!/bin/bash
 set -e
 
@@ -36,6 +35,3 @@ echo "   - Multiple debts user: ff_test_user_multiple_debts"
 echo "   - Low surplus user: ff_test_user_low_surplus"
 
 echo " Ready to test Goal Engine endpoints!"
-EOF
-
-chmod +x scripts/database/populate_test_data.sh
