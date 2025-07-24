@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Enhanced Fiscal Fox Net Worth Analyzer
-Includes Federated Learning, Local File Support, and Privacy Features
+Fiscal Fox Net Worth Analyzer - Core Features Only
+Clean version without federated learning components
 """
 
 import json
@@ -18,38 +18,18 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, r2_score
 from cryptography.fernet import Fernet
 import warnings
-import asyncio
 from typing import Dict, List, Optional, Union
 warnings.filterwarnings('ignore')
 
-# Federated Learning Imports
-try:
-    import tensorflow as tf
-    import tensorflow_federated as tff
-    FEDERATED_AVAILABLE = True
-except ImportError:
-    print("TensorFlow Federated not available. Install with: pip install tensorflow-federated")
-    FEDERATED_AVAILABLE = False
-
-try:
-    import flwr as fl
-    from flwr.client import NumPyClient
-    FLOWER_AVAILABLE = True
-except ImportError:
-    print("Flower not available. Install with: pip install flwr")
-    FLOWER_AVAILABLE = False
-
 
 class FiscalFoxNetWorthAnalyzer:
-    """Enhanced Net Worth Analyzer with Federated Learning and Local File Support"""
+    """Net Worth Analyzer with Core Features Only"""
     
     def __init__(self, 
                  master_uid: str = "ff_user_8a838f3528819407", 
                  enable_privacy: bool = True,
                  use_local_files: bool = False,
-                 local_data_path: str = "data/",
-                 institution_id: str = None,
-                 federated_mode: bool = False):
+                 local_data_path: str = "data/"):
         
         self.master_uid = master_uid
         self.project_id = "fiscal-fox-fin"
@@ -57,8 +37,6 @@ class FiscalFoxNetWorthAnalyzer:
         self.enable_privacy = enable_privacy
         self.use_local_files = use_local_files
         self.local_data_path = local_data_path
-        self.institution_id = institution_id or f"institution_{master_uid}"
-        self.federated_mode = federated_mode
         
         # Core data structures
         self.data = {}
@@ -71,11 +49,6 @@ class FiscalFoxNetWorthAnalyzer:
         if enable_privacy:
             self.encryption_key = Fernet.generate_key()
             self.cipher_suite = Fernet(self.encryption_key)
-        
-        # Federated learning components
-        self.local_model = None
-        self.global_model_weights = None
-        self.federated_client = None
         
         # Setup clients and logging
         if not use_local_files:
@@ -92,8 +65,7 @@ class FiscalFoxNetWorthAnalyzer:
     def _generate_analysis_id(self) -> str:
         """Generate unique analysis ID"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fed_suffix = "_federated" if self.federated_mode else ""
-        return f"{self.master_uid}_networth_analysis_{timestamp}{fed_suffix}"
+        return f"{self.master_uid}_networth_analysis_{timestamp}"
     
     def _setup_bigquery_client(self):
         """Initialize BigQuery client"""
@@ -632,11 +604,7 @@ class FiscalFoxNetWorthAnalyzer:
             'data': {},
             'errors': [],
             'warnings': [],
-            'data_quality_score': 0,
-            'federated_info': {
-                'mode': self.federated_mode,
-                'institution_id': self.institution_id
-            }
+            'data_quality_score': 0
         }
         
         try:
@@ -768,8 +736,7 @@ class FiscalFoxNetWorthAnalyzer:
 
     def run_comprehensive_analysis(self, file_paths: Optional[Dict[str, str]] = None):
         """Main analysis function"""
-        print("🚀 Starting Enhanced Fiscal Fox Net Worth Analysis...")
-        print(f"📊 Mode: {'Federated' if self.federated_mode else 'Centralized'}")
+        print("🚀 Starting Fiscal Fox Net Worth Analysis...")
         print(f"📁 Data Source: {'Local Files' if self.use_local_files else 'BigQuery'}")
         
         # Load data
@@ -813,9 +780,7 @@ class FiscalFoxNetWorthAnalyzer:
             analysis_result['metadata'] = {
                 'analysis_id': self.analysis_id,
                 'timestamp': datetime.utcnow().isoformat(),
-                'master_uid': self.master_uid,
-                'institution_id': self.institution_id,
-                'federated_mode': self.federated_mode
+                'master_uid': self.master_uid
             }
             
             with open(results_file, 'w', encoding='utf-8') as f:
@@ -829,7 +794,7 @@ class FiscalFoxNetWorthAnalyzer:
     def _display_results(self, results):
         """Display comprehensive results"""
         print("\n" + "=" * 70)
-        print("🦊 ENHANCED FISCAL FOX NET WORTH ANALYSIS RESULTS")
+        print("🦊 FISCAL FOX NET WORTH ANALYSIS RESULTS")
         print("=" * 70)
         
         ratios = results['data']['ratios']
@@ -838,10 +803,6 @@ class FiscalFoxNetWorthAnalyzer:
         print(f"• Total Assets: ₹{ratios['total_assets']:,.2f}")
         print(f"• Total Liabilities: ₹{ratios['total_liabilities']:,.2f}")
         print(f"• Data Quality Score: {results['data_quality_score']:.1f}/100")
-        
-        if self.federated_mode:
-            print(f"• Institution ID: {self.institution_id}")
-            print(f"• Privacy Protection: {'Enabled' if self.enable_privacy else 'Disabled'}")
         
         print(f"\n📊 KEY FINANCIAL RATIOS:")
         print(f"• Debt-to-Asset Ratio: {ratios['debt_to_asset_ratio']:.2%}")
@@ -878,265 +839,6 @@ class FiscalFoxNetWorthAnalyzer:
                 print(f"• {error}")
             if self.missing_data_fields:
                 print(f"• Missing data fields: {len(self.missing_data_fields)}")
-
-
-# =============================================================================
-# FEDERATED LEARNING COMPONENTS
-# =============================================================================
-
-class FederatedNetWorthServer:
-    """Federated Learning Server for Net Worth Analysis"""
-    
-    def __init__(self, project_id: str = "fiscal-fox-fin"):
-        self.project_id = project_id
-        self.participating_institutions = []
-        self.training_rounds = 0
-        self.global_model = None
-        
-        if FEDERATED_AVAILABLE:
-            self._initialize_federated_model()
-        else:
-            print("⚠️ TensorFlow Federated not available")
-
-    def _initialize_federated_model(self):
-        """Initialize federated learning model"""
-        def model_fn():
-            model = tf.keras.Sequential([
-                tf.keras.layers.Dense(64, activation='relu', input_shape=(8,)),
-                tf.keras.layers.Dropout(0.2),
-                tf.keras.layers.Dense(32, activation='relu'),
-                tf.keras.layers.Dropout(0.1),
-                tf.keras.layers.Dense(16, activation='relu'),
-                tf.keras.layers.Dense(1, activation='linear')  # Net worth prediction
-            ])
-            
-            return tff.learning.models.from_keras_model(
-                model,
-                input_spec=tf.TensorSpec([None, 8], tf.float32),
-                loss=tf.keras.losses.MeanSquaredError(),
-                metrics=[tf.keras.metrics.MeanAbsoluteError()]
-            )
-        
-        self.model_fn = model_fn
-
-    def add_institution(self, institution_id: str, analyzer: FiscalFoxNetWorthAnalyzer):
-        """Add institution to federated training"""
-        self.participating_institutions.append({
-            'id': institution_id,
-            'analyzer': analyzer,
-            'data_quality': analyzer.calculate_data_quality_score()
-        })
-        print(f"✅ Added institution {institution_id} to federated network")
-
-    def create_federated_dataset(self, analyzer: FiscalFoxNetWorthAnalyzer):
-        """Create federated dataset from analyzer"""
-        if not analyzer.financial_ratios:
-            # Run basic analysis to get ratios
-            assets = analyzer.extract_assets_robust()
-            liabilities = analyzer.extract_liabilities_robust()
-            analyzer.calculate_financial_ratios_safe(assets, liabilities)
-        
-        ratios = analyzer.financial_ratios
-        
-        # Feature engineering for federated learning
-        features = [
-            ratios['debt_to_asset_ratio'],
-            ratios['credit_score'] / 900.0,  # Normalize
-            np.log(ratios['total_assets']) / 20.0,  # Log normalize
-            ratios['credit_utilization'],
-            ratios['investment_ratio'],
-            ratios['liquidity_ratio'],
-            1.0 if ratios['total_assets'] > 1000000 else 0.0,  # High net worth flag
-            ratios['total_liabilities'] / max(ratios['total_assets'], 1)  # Another debt ratio
-        ]
-        
-        # Target: normalized net worth growth potential
-        target = np.log(max(ratios['net_worth'], 1)) / 20.0
-        
-        return tf.data.Dataset.from_tensor_slices({
-            'x': tf.constant([features], dtype=tf.float32),
-            'y': tf.constant([target], dtype=tf.float32)
-        }).batch(1)
-
-    def run_federated_training(self, num_rounds: int = 5):
-        """Run federated training across institutions"""
-        if not FEDERATED_AVAILABLE:
-            print("❌ TensorFlow Federated not available")
-            return None
-        
-        print(f"🚀 Starting federated training with {len(self.participating_institutions)} institutions")
-        
-        # Create federated data
-        federated_train_data = []
-        for institution in self.participating_institutions:
-            dataset = self.create_federated_dataset(institution['analyzer'])
-            federated_train_data.append(dataset)
-        
-        # Build federated averaging process
-        iterative_process = tff.learning.algorithms.build_weighted_fed_avg(
-            model_fn=self.model_fn,
-            client_optimizer_fn=lambda: tf.keras.optimizers.Adam(0.01),
-            server_optimizer_fn=lambda: tf.keras.optimizers.Adam(1.0)
-        )
-        
-        # Initialize the process
-        state = iterative_process.initialize()
-        
-        # Run training rounds
-        for round_num in range(num_rounds):
-            print(f"\n🔄 Training Round {round_num + 1}/{num_rounds}")
-            
-            result = iterative_process.next(state, federated_train_data)
-            state = result.state
-            metrics = result.metrics
-            
-            print(f"📊 Round {round_num + 1} Metrics:")
-            if 'client_work' in metrics:
-                if 'train' in metrics['client_work']:
-                    train_metrics = metrics['client_work']['train']
-                    print(f"  • Training Loss: {train_metrics.get('loss', 'N/A'):.4f}")
-                    print(f"  • Mean Absolute Error: {train_metrics.get('mean_absolute_error', 'N/A'):.4f}")
-            
-            self._store_federated_round_results(round_num, metrics)
-        
-        self.training_rounds = num_rounds
-        print(f"✅ Federated training completed after {num_rounds} rounds")
-        return state
-
-    def _store_federated_round_results(self, round_num: int, metrics: dict):
-        """Store federated training round results"""
-        try:
-            client = bigquery.Client(project=self.project_id)
-            
-            # Extract metrics safely
-            train_loss = 0.0
-            train_mae = 0.0
-            
-            if 'client_work' in metrics and 'train' in metrics['client_work']:
-                train_metrics = metrics['client_work']['train']
-                train_loss = float(train_metrics.get('loss', 0.0))
-                train_mae = float(train_metrics.get('mean_absolute_error', 0.0))
-            
-            row_data = {
-                'round_number': round_num + 1,
-                'timestamp': datetime.utcnow(),
-                'training_loss': train_loss,
-                'training_mae': train_mae,
-                'participating_institutions': len(self.participating_institutions),
-                'model_version': f'federated_networth_v{round_num + 1}',
-                'institution_ids': json.dumps([inst['id'] for inst in self.participating_institutions])
-            }
-            
-            table_id = f"{self.project_id}.fiscal_master_dw.federated_training_results"
-            errors = client.insert_rows_json(table_id, [row_data])
-            
-            if errors:
-                print(f"⚠️ Error storing federated round results: {errors}")
-            else:
-                print(f"💾 Stored round {round_num + 1} results")
-                
-        except Exception as e:
-            print(f"⚠️ Failed to store federated results: {e}")
-
-
-class FederatedNetWorthClient(NumPyClient):
-    """Federated Learning Client using Flower"""
-    
-    def __init__(self, analyzer: FiscalFoxNetWorthAnalyzer):
-        self.analyzer = analyzer
-        self.model = self._create_local_model()
-        
-    def _create_local_model(self):
-        """Create local TensorFlow model"""
-        model = tf.keras.Sequential([
-            tf.keras.layers.Dense(64, activation='relu', input_shape=(8,)),
-            tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(32, activation='relu'),
-            tf.keras.layers.Dropout(0.1),
-            tf.keras.layers.Dense(16, activation='relu'),
-            tf.keras.layers.Dense(1, activation='linear')
-        ])
-        
-        model.compile(
-            optimizer='adam',
-            loss='mse',
-            metrics=['mae']
-        )
-        
-        return model
-    
-    def get_parameters(self, config):
-        """Return current local model parameters"""
-        return self.model.get_weights()
-    
-    def set_parameters(self, parameters):
-        """Update local model with global parameters"""
-        self.model.set_weights(parameters)
-    
-    def fit(self, parameters, config):
-        """Train model on local data"""
-        self.set_parameters(parameters)
-        
-        # Prepare training data
-        X, y = self._prepare_training_data()
-        
-        if self.analyzer.enable_privacy:
-            X, y = self._apply_differential_privacy(X, y)
-        
-        # Train locally
-        history = self.model.fit(X, y, epochs=1, batch_size=1, verbose=0)
-        
-        return (
-            self.get_parameters(config),
-            len(X),
-            {"loss": history.history["loss"][0], "mae": history.history["mae"][0]}
-        )
-    
-    def _prepare_training_data(self):
-        """Prepare training data from analyzer"""
-        if not self.analyzer.financial_ratios:
-            assets = self.analyzer.extract_assets_robust()
-            liabilities = self.analyzer.extract_liabilities_robust()
-            self.analyzer.calculate_financial_ratios_safe(assets, liabilities)
-        
-        ratios = self.analyzer.financial_ratios
-        
-        features = np.array([[
-            ratios['debt_to_asset_ratio'],
-            ratios['credit_score'] / 900.0,
-            np.log(ratios['total_assets']) / 20.0,
-            ratios['credit_utilization'],
-            ratios['investment_ratio'],
-            ratios['liquidity_ratio'],
-            1.0 if ratios['total_assets'] > 1000000 else 0.0,
-            ratios['total_liabilities'] / max(ratios['total_assets'], 1)
-        ]])
-        
-        targets = np.array([np.log(max(ratios['net_worth'], 1)) / 20.0])
-        
-        return features, targets
-    
-    def _apply_differential_privacy(self, X, y, epsilon=1.0):
-        """Apply differential privacy to training data"""
-        # Add Laplace noise
-        X_sensitivity = np.std(X, axis=0)
-        X_noise_scale = X_sensitivity / epsilon
-        X_noisy = X + np.random.laplace(0, X_noise_scale, X.shape)
-        
-        y_sensitivity = np.std(y)
-        y_noise_scale = y_sensitivity / epsilon
-        y_noisy = y + np.random.laplace(0, y_noise_scale, y.shape)
-        
-        return X_noisy, y_noisy
-    
-    def evaluate(self, parameters, config):
-        """Evaluate model on local test data"""
-        self.set_parameters(parameters)
-        
-        X, y = self._prepare_training_data()
-        loss, mae = self.model.evaluate(X, y, verbose=0)
-        
-        return loss, len(X), {"mae": mae}
 
 
 # =============================================================================
@@ -1243,19 +945,15 @@ def create_sample_data_files(data_path: str = "data/"):
 # =============================================================================
 
 def main():
-    """Main execution function with multiple run modes"""
+    """Main execution function"""
     
     # Parse command line arguments
     import argparse
-    parser = argparse.ArgumentParser(description='Enhanced Fiscal Fox Net Worth Analyzer')
+    parser = argparse.ArgumentParser(description='Fiscal Fox Net Worth Analyzer - Clean Version')
     parser.add_argument('--master_uid', default="ff_user_8a838f3528819407", help='Master UID')
     parser.add_argument('--use_local_files', action='store_true', help='Use local files instead of BigQuery')
     parser.add_argument('--data_path', default="data/", help='Path to local data files')
-    parser.add_argument('--federated', action='store_true', help='Enable federated learning mode')
-    parser.add_argument('--institution_id', help='Institution ID for federated learning')
     parser.add_argument('--create_sample_data', action='store_true', help='Create sample data files')
-    parser.add_argument('--server_mode', action='store_true', help='Run as federated server')
-    parser.add_argument('--client_mode', action='store_true', help='Run as federated client')
     
     args = parser.parse_args()
     
@@ -1264,53 +962,13 @@ def main():
         create_sample_data_files(args.data_path)
         return
     
-    # Federated Server Mode
-    if args.server_mode and args.federated:
-        print("🖥️ Starting Federated Learning Server...")
-        server = FederatedNetWorthServer()
-        
-        # Example: Add multiple institutions
-        institution_ids = ["bank_a", "bank_b", "credit_union_c"]
-        for inst_id in institution_ids:
-            analyzer = FiscalFoxNetWorthAnalyzer(
-                master_uid=f"ff_user_{inst_id}",
-                federated_mode=True,
-                institution_id=inst_id,
-                use_local_files=args.use_local_files,
-                local_data_path=args.data_path
-            )
-            analyzer.load_user_data()
-            server.add_institution(inst_id, analyzer)
-        
-        # Run federated training
-        server.run_federated_training(num_rounds=3)
-        return
-    
-    # Federated Client Mode
-    if args.client_mode and args.federated and FLOWER_AVAILABLE:
-        print("📱 Starting Federated Learning Client...")
-        analyzer = FiscalFoxNetWorthAnalyzer(
-            master_uid=args.master_uid,
-            federated_mode=True,
-            institution_id=args.institution_id,
-            use_local_files=args.use_local_files,
-            local_data_path=args.data_path
-        )
-        analyzer.load_user_data()
-        
-        client = FederatedNetWorthClient(analyzer)
-        fl.client.start_numpy_client(server_address="[::]:8080", client=client)
-        return
-    
     # Standard Analysis Mode
-    print("🦊 Starting Enhanced Fiscal Fox Net Worth Analyzer...")
+    print("🦊 Starting Fiscal Fox Net Worth Analyzer...")
     
     analyzer = FiscalFoxNetWorthAnalyzer(
         master_uid=args.master_uid,
         use_local_files=args.use_local_files,
-        local_data_path=args.data_path,
-        federated_mode=args.federated,
-        institution_id=args.institution_id
+        local_data_path=args.data_path
     )
     
     # Run comprehensive analysis
