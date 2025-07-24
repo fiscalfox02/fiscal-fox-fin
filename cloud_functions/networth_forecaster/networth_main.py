@@ -682,7 +682,7 @@ class FiscalFoxNetWorthAnalyzer:
         model = RandomForestRegressor(n_estimators=100, random_state=42)
         model.fit(X_train, y_train)
         
-        pred = model.predict(X_test)
+        test_predictions = model.predict(X_test)
         
         # User predictions
         ratios = self.financial_ratios
@@ -707,14 +707,14 @@ class FiscalFoxNetWorthAnalyzer:
             adjusted_features[0][2] *= growth_factor
             adjusted_features[0][0] *= (0.95 ** (months/12))
             
-            pred = model.predict(adjusted_features)[0]
-            ml_predictions[f'{months}_months'] = round(pred, 2)
+            user_prediction = model.predict(adjusted_features)[0]
+            ml_predictions[f'{months}_months'] = round(user_prediction, 2)
         
         return {
             'predictions': ml_predictions,
             'model_performance': {
-                'mae': mean_absolute_error(y_test, pred),
-                'r2': r2_score(y_test, pred)
+                'mae': mean_absolute_error(y_test, test_predictions),
+                'r2': r2_score(y_test, test_predictions)
             }
         }
 
