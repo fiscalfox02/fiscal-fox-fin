@@ -803,12 +803,15 @@ class FiscalFoxNetWorthAnalyzer:
         # Updated table names for net worth
         results_table_id = f"{self.project_id}.{self.dataset_id}.networth_results"
         webhook_table_id = f"{self.project_id}.{self.dataset_id}.networth_webhook"
+
+        from datetime import timezone
+        analysis_timestamp = datetime.now(timezone.utc).isoformat()
         
         # Prepare data for insertion
         row_data = {
             'master_uid': self.master_uid,
             'analysis_id': self.analysis_id,
-            'analysis_timestamp': datetime.utcnow(),
+            'analysis_timestamp': analysis_timestamp,
             'net_worth': analysis_result['data']['ratios']['net_worth'],
             'total_assets': analysis_result['data']['ratios']['total_assets'],
             'total_liabilities': analysis_result['data']['ratios']['total_liabilities'],
