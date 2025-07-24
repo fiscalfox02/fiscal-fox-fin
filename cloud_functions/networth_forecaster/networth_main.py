@@ -121,7 +121,7 @@ class FiscalFoxNetWorthAnalyzer:
             """,
             'epf': f"""
                 SELECT json_data 
-                FROM `{self.project_id}.{self.dataset_id}.epf_details_processed` 
+                FROM `{self.project_id}.{self.dataset_id}.epf_holdings_processed` 
                 WHERE master_uid = @master_uid
                 ORDER BY created_at DESC 
                 LIMIT 1
@@ -164,10 +164,10 @@ class FiscalFoxNetWorthAnalyzer:
         
         # Default file paths
         default_paths = {
-            'net_worth': os.path.join(self.local_data_path, 'fetch_net_worth.json'),
-            'credit': os.path.join(self.local_data_path, 'fetch_credit_report.json'),
-            'epf': os.path.join(self.local_data_path, 'fetch_epf_details.json'),
-            'mf_transactions': os.path.join(self.local_data_path, 'fetch_mf_transactions.json')
+            'net_worth': os.path.join(self.local_data_path, 'data/fetch_net_worth.json'),
+            'credit': os.path.join(self.local_data_path, 'data/fetch_credit_report.json'),
+            'epf': os.path.join(self.local_data_path, 'data/fetch_epf_holdings.json'),
+            'mf_transactions': os.path.join(self.local_data_path, 'data/fetch_mf_transactions.json')
         }
         
         # Use provided paths or defaults
