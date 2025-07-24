@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Fiscal Fox Net Worth Analyzer - Core Features Only
-Clean version without federated learning components
+Fiscal Fox Net Worth Analyzer - Structured Tables Version
+Works with normalized BigQuery tables (not JSON format)
 """
 
 import json
@@ -23,7 +23,7 @@ warnings.filterwarnings('ignore')
 
 
 class FiscalFoxNetWorthAnalyzer:
-    """Net Worth Analyzer with Core Features Only"""
+    """Net Worth Analyzer for Structured BigQuery Tables"""
     
     def __init__(self, 
                  master_uid: str = "ff_user_8a838f3528819407", 
@@ -93,81 +93,270 @@ class FiscalFoxNetWorthAnalyzer:
         return max(0, value + noise)  # Ensure non-negative
 
     def load_user_data_from_bigquery(self) -> Dict:
-        """Load user data from BigQuery tables"""
+        """Load user data from structured BigQuery tables"""
         if not self.client:
             raise Exception("BigQuery client not initialized")
-            
-        queries = {
-            'net_worth': f"""
-                SELECT json_data 
-                FROM `{self.project_id}.{self.dataset_id}.net_worth_processed` 
-                WHERE master_uid = @master_uid
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """,
-            'credit': f"""
-                SELECT json_data 
-                FROM `{self.project_id}.{self.dataset_id}.credit_report_processed` 
-                WHERE master_uid = @master_uid
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """,
-            'mf_transactions': f"""
-                SELECT json_data 
-                FROM `{self.project_id}.{self.dataset_id}.mf_transactions_processed` 
-                WHERE master_uid = @master_uid
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """,
-            'epf': f"""
-                SELECT json_data 
-                FROM `{self.project_id}.{self.dataset_id}.epf_holdings_processed` 
-                WHERE master_uid = @master_uid
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """
-        }
         
         user_data = {}
         
-        for data_type, query in queries.items():
-            try:
-                print(f"📊 Loading {data_type} data for {self.master_uid}...")
+        # 1. Load Net Worth Data (Assets & Liabilities)
+        try:
+            print(f"📊 Loading net worth data for {self.master_uid}...")
+            
+            networth_query = f"""
+                SELECT 
+                    asset_type,
+                    asset_value,
+                    liability_type, 
+                    liability_value,
+                    total_net_worth,
+                    account_id,
+                    account_type,
+                    bank_name,
+                    account_balance
+                FROM `{self.project_id}.{self.dataset_id}.net_worth_processed`
+                WHERE master_uid = @master_uid
+                ORDER BY processed_at DESC
+            """
+            
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("master_uid", "STRING", self.master_uid)
+                ]
+            )
+            
+            query_job = self.client.query(networth_query, job_config=job_config)
+            results = query_job.result()
+            
+            # Process net worth data
+            assets = {}
+            liabilities = {}
+            accounts = {}
+            total_net_worth = 0
+            
+            for row in results:
+                # Assets
+                if row.asset_type and row.asset_value:
+                    asset_key = row.asset_type.upper().replace(' ', '_')
+                    assets[asset_key] = assets.get(asset_key, 0) + float(row.asset_value)
                 
-                job_config = bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ScalarQueryParameter("master_uid", "STRING", self.master_uid)
-                    ]
-                )
+                # Liabilities  
+                if row.liability_type and row.liability_value:
+                    liability_key = row.liability_type.upper().replace(' ', '_')
+                    liabilities[liability_key] = liabilities.get(liability_key, 0) + float(row.liability_value)
                 
-                query_job = self.client.query(query, job_config=job_config)
-                results = query_job.result()
+                # Account details
+                if row.account_id:
+                    accounts[row.account_id] = {
+                        'account_type': row.account_type,
+                        'bank_name': row.bank_name,
+                        'balance': float(row.account_balance) if row.account_balance else 0
+                    }
                 
-                for row in results:
-                    user_data[data_type] = json.loads(row.json_data) if row.json_data else {}
-                    print(f"✅ Loaded {data_type} data successfully")
-                    break
+                # Net worth
+                if row.total_net_worth:
+                    total_net_worth = float(row.total_net_worth)
+            
+            user_data['net_worth'] = {
+                'assets': assets,
+                'liabilities': liabilities,
+                'accounts': accounts,
+                'total_net_worth': total_net_worth
+            }
+            
+            print(f"✅ Loaded net worth data: {len(assets)} assets, {len(liabilities)} liabilities")
+            
+        except Exception as e:
+            print(f"❌ Error loading net worth: {e}")
+            user_data['net_worth'] = {}
+            self.validation_errors.append(f"Failed to load net worth: {str(e)}")
+        
+        # 2. Load Credit Report Data
+        try:
+            print(f"📊 Loading credit data for {self.master_uid}...")
+            
+            credit_query = f"""
+                SELECT 
+                    credit_score,
+                    total_outstanding_balance,
+                    total_past_due,
+                    account_count,
+                    current_balance,
+                    amount_past_due,
+                    account_type,
+                    payment_rating,
+                    account_status
+                FROM `{self.project_id}.{self.dataset_id}.credit_report_processed`
+                WHERE master_uid = @master_uid
+                ORDER BY processed_at DESC
+            """
+            
+            query_job = self.client.query(credit_query, job_config=job_config)
+            results = query_job.result()
+            
+            credit_accounts = []
+            credit_score = 650
+            total_outstanding = 0
+            total_past_due = 0
+            
+            for row in results:
+                if row.credit_score:
+                    credit_score = int(row.credit_score)
                 
-                if data_type not in user_data:
-                    print(f"⚠️ No {data_type} data found for {self.master_uid}")
-                    user_data[data_type] = {}
-                    
-            except Exception as e:
-                print(f"❌ Error loading {data_type}: {e}")
-                user_data[data_type] = {}
-                self.validation_errors.append(f"Failed to load {data_type}: {str(e)}")
+                if row.total_outstanding_balance:
+                    total_outstanding = float(row.total_outstanding_balance)
+                
+                if row.total_past_due:
+                    total_past_due = float(row.total_past_due)
+                
+                # Individual account details
+                if row.current_balance is not None:
+                    credit_accounts.append({
+                        'currentBalance': float(row.current_balance),
+                        'amountPastDue': float(row.amount_past_due) if row.amount_past_due else 0,
+                        'accountType': row.account_type,
+                        'paymentRating': row.payment_rating,
+                        'accountStatus': row.account_status
+                    })
+            
+            user_data['credit'] = {
+                'creditReports': [{
+                    'creditReportData': {
+                        'score': {'bureauScore': str(credit_score)},
+                        'creditAccount': {
+                            'creditAccountDetails': credit_accounts
+                        },
+                        'totalOutstanding': total_outstanding,
+                        'totalPastDue': total_past_due
+                    }
+                }]
+            }
+            
+            print(f"✅ Loaded credit data: Score {credit_score}, {len(credit_accounts)} accounts")
+            
+        except Exception as e:
+            print(f"❌ Error loading credit: {e}")
+            user_data['credit'] = {}
+            self.validation_errors.append(f"Failed to load credit: {str(e)}")
+        
+        # 3. Load MF Transactions Data
+        try:
+            print(f"📊 Loading MF transactions for {self.master_uid}...")
+            
+            mf_query = f"""
+                SELECT 
+                    isin_number,
+                    scheme_name,
+                    transaction_type,
+                    transaction_amount,
+                    transaction_units,
+                    purchase_price,
+                    folio_id
+                FROM `{self.project_id}.{self.dataset_id}.mf_transactions_processed`
+                WHERE master_uid = @master_uid
+                ORDER BY transaction_date DESC
+            """
+            
+            query_job = self.client.query(mf_query, job_config=job_config)
+            results = query_job.result()
+            
+            # Aggregate by scheme
+            schemes = {}
+            for row in results:
+                isin = row.isin_number
+                if isin not in schemes:
+                    schemes[isin] = {
+                        'scheme_name': row.scheme_name,
+                        'total_invested': 0,
+                        'total_units': 0,
+                        'transactions': []
+                    }
+                
+                amount = float(row.transaction_amount) if row.transaction_amount else 0
+                units = float(row.transaction_units) if row.transaction_units else 0
+                
+                if row.transaction_type in ['PURCHASE', 'SIP']:
+                    schemes[isin]['total_invested'] += amount
+                    schemes[isin]['total_units'] += units
+                elif row.transaction_type in ['REDEMPTION', 'SELL']:
+                    schemes[isin]['total_invested'] -= amount
+                    schemes[isin]['total_units'] -= units
+                
+                schemes[isin]['transactions'].append({
+                    'type': row.transaction_type,
+                    'amount': amount,
+                    'units': units,
+                    'price': float(row.purchase_price) if row.purchase_price else 0
+                })
+            
+            user_data['mf_transactions'] = {
+                'schemes': schemes,
+                'total_schemes': len(schemes)
+            }
+            
+            print(f"✅ Loaded MF data: {len(schemes)} schemes")
+            
+        except Exception as e:
+            print(f"❌ Error loading MF transactions: {e}")
+            user_data['mf_transactions'] = {}
+            self.validation_errors.append(f"Failed to load MF transactions: {str(e)}")
+        
+        # 4. Load EPF Holdings Data
+        try:
+            print(f"📊 Loading EPF holdings for {self.master_uid}...")
+            
+            epf_query = f"""
+                SELECT 
+                    establishment_name,
+                    member_id,
+                    pf_balance,
+                    employee_share,
+                    employer_share,
+                    pension_balance,
+                    total_pf_balance
+                FROM `{self.project_id}.{self.dataset_id}.epf_holdings_processed`
+                WHERE master_uid = @master_uid
+                ORDER BY processed_at DESC
+                LIMIT 1
+            """
+            
+            query_job = self.client.query(epf_query, job_config=job_config)
+            results = query_job.result()
+            
+            epf_data = {}
+            for row in results:
+                epf_data = {
+                    'establishment_name': row.establishment_name,
+                    'member_id': row.member_id,
+                    'pf_balance': float(row.pf_balance) if row.pf_balance else 0,
+                    'employee_share': float(row.employee_share) if row.employee_share else 0,
+                    'employer_share': float(row.employer_share) if row.employer_share else 0,
+                    'pension_balance': float(row.pension_balance) if row.pension_balance else 0,
+                    'total_pf_balance': float(row.total_pf_balance) if row.total_pf_balance else 0
+                }
+                break
+            
+            user_data['epf'] = epf_data
+            
+            total_epf = epf_data.get('total_pf_balance', 0)
+            print(f"✅ Loaded EPF data: ₹{total_epf:,.2f}")
+            
+        except Exception as e:
+            print(f"❌ Error loading EPF: {e}")
+            user_data['epf'] = {}
+            self.validation_errors.append(f"Failed to load EPF: {str(e)}")
         
         return user_data
 
     def load_user_data_from_local_files(self, file_paths: Optional[Dict[str, str]] = None) -> Dict:
-        """Load user data from local JSON files"""
+        """Load user data from local JSON files (fallback)"""
         
         # Default file paths
         default_paths = {
-            'net_worth': os.path.join(self.local_data_path, 'data/fetch_net_worth.json'),
-            'credit': os.path.join(self.local_data_path, 'data/fetch_credit_report.json'),
-            'epf': os.path.join(self.local_data_path, 'data/fetch_epf_holdings.json'),
-            'mf_transactions': os.path.join(self.local_data_path, 'data/fetch_mf_transactions.json')
+            'net_worth': os.path.join(self.local_data_path, 'fetch_net_worth.json'),
+            'credit': os.path.join(self.local_data_path, 'fetch_credit_report.json'),
+            'epf': os.path.join(self.local_data_path, 'fetch_epf_details.json'),
+            'mf_transactions': os.path.join(self.local_data_path, 'fetch_mf_transactions.json')
         }
         
         # Use provided paths or defaults
@@ -218,70 +407,40 @@ class FiscalFoxNetWorthAnalyzer:
         self.data = user_data
         return user_data
 
-    def parse_currency_safe(self, currency_obj: dict) -> float:
-        """Safely parse currency with validation"""
-        try:
-            if not currency_obj or 'units' not in currency_obj:
-                return 0.0
-            
-            units = currency_obj.get('units', 0)
-            nanos = currency_obj.get('nanos', 0)
-            
-            if isinstance(units, str):
-                units = float(units.replace(',', ''))
-            
-            if abs(units) > 1e12:  # 1 trillion limit
-                self.logger.warning(f"Unusually large amount detected")
-                units = min(abs(units), 1e12)
-            
-            value = float(units) + float(nanos) / 1e9
-            return self.add_differential_privacy_noise(value)
-            
-        except (ValueError, TypeError) as e:
-            self.logger.error(f"Currency parsing error: {e}")
-            return 0.0
-
     def extract_assets_robust(self) -> dict:
-        """Extract assets with edge case handling"""
+        """Extract assets from structured data"""
         assets = {}
         
         try:
+            # From structured net worth data
             net_worth_data = self.data.get('net_worth', {})
+            if 'assets' in net_worth_data:
+                assets.update(net_worth_data['assets'])
             
-            # From netWorthResponse
-            if 'netWorthResponse' in net_worth_data:
-                asset_values = net_worth_data['netWorthResponse'].get('assetValues', [])
-                for asset in asset_values:
-                    asset_type = asset.get('netWorthAttribute', 'UNKNOWN').replace('ASSET_TYPE_', '')
-                    assets[asset_type] = self.parse_currency_safe(asset.get('value', {}))
-            
-            # From accountDetailsBulkResponse
-            if 'accountDetailsBulkResponse' in net_worth_data:
-                accounts = net_worth_data['accountDetailsBulkResponse'].get('accountDetailsMap', {})
-                
+            # Add account balances as bank deposits
+            if 'accounts' in net_worth_data:
                 bank_total = 0
-                securities_total = 0
-                
-                for account_id, account_data in accounts.items():
-                    # Bank deposits
-                    if 'depositSummary' in account_data:
-                        balance = self.parse_currency_safe(
-                            account_data['depositSummary'].get('currentBalance', {})
-                        )
-                        bank_total += balance
-                    
-                    # Securities (equity, ETF, REIT, InvIT)
-                    for summary_type in ['equitySummary', 'etfSummary', 'reitSummary', 'invitSummary']:
-                        if summary_type in account_data:
-                            value = self.parse_currency_safe(
-                                account_data[summary_type].get('currentValue', {})
-                            )
-                            securities_total += value
+                for account_id, account_info in net_worth_data['accounts'].items():
+                    bank_total += account_info.get('balance', 0)
                 
                 if bank_total > 0:
-                    assets['BANK_DEPOSITS'] = bank_total
-                if securities_total > 0:
-                    assets['SECURITIES'] = securities_total
+                    assets['BANK_DEPOSITS'] = assets.get('BANK_DEPOSITS', 0) + bank_total
+            
+            # Add EPF as retirement asset
+            epf_data = self.data.get('epf', {})
+            if epf_data.get('total_pf_balance', 0) > 0:
+                assets['EPF_BALANCE'] = epf_data['total_pf_balance']
+            
+            # Add MF investments
+            mf_data = self.data.get('mf_transactions', {})
+            if 'schemes' in mf_data:
+                mf_total = sum(scheme.get('total_invested', 0) for scheme in mf_data['schemes'].values())
+                if mf_total > 0:
+                    assets['MUTUAL_FUNDS'] = mf_total
+            
+            # Apply differential privacy
+            for key, value in assets.items():
+                assets[key] = self.add_differential_privacy_noise(value)
             
             # Ensure minimum assets to avoid division by zero
             if not assets or sum(assets.values()) == 0:
@@ -295,38 +454,39 @@ class FiscalFoxNetWorthAnalyzer:
         return assets
 
     def extract_liabilities_robust(self) -> dict:
-        """Extract liabilities with edge case handling"""
+        """Extract liabilities from structured data"""
         liabilities = {}
         
         try:
+            # From structured net worth data
             net_worth_data = self.data.get('net_worth', {})
+            if 'liabilities' in net_worth_data:
+                liabilities.update(net_worth_data['liabilities'])
             
-            # From netWorthResponse
-            if 'netWorthResponse' in net_worth_data:
-                liability_values = net_worth_data['netWorthResponse'].get('liabilityValues', [])
-                for liability in liability_values:
-                    liability_type = liability.get('netWorthAttribute', 'UNKNOWN').replace('LIABILITY_TYPE_', '')
-                    liabilities[liability_type] = self.parse_currency_safe(liability.get('value', {}))
-            
-            # From credit report
+            # From credit report data
             credit_data = self.data.get('credit', {})
             if 'creditReports' in credit_data and credit_data['creditReports']:
                 try:
-                    credit_accounts = credit_data['creditReports'][0]['creditReportData'].get(
-                        'creditAccount', {}
-                    ).get('creditAccountDetails', [])
+                    credit_report = credit_data['creditReports'][0]['creditReportData']
                     
+                    # Calculate total credit debt
                     credit_debt = 0
-                    for account in credit_accounts:
-                        current_balance = float(account.get('currentBalance', 0))
-                        past_due = float(account.get('amountPastDue', 0))
-                        credit_debt += current_balance + past_due
+                    if 'creditAccount' in credit_report:
+                        accounts = credit_report['creditAccount'].get('creditAccountDetails', [])
+                        for account in accounts:
+                            current_balance = float(account.get('currentBalance', 0))
+                            past_due = float(account.get('amountPastDue', 0))
+                            credit_debt += current_balance + past_due
                     
                     if credit_debt > 0:
                         liabilities['CREDIT_DEBT'] = credit_debt
                         
                 except (IndexError, KeyError):
                     self.missing_data_fields.append('credit_liabilities')
+            
+            # Apply differential privacy
+            for key, value in liabilities.items():
+                liabilities[key] = self.add_differential_privacy_noise(value)
             
         except Exception as e:
             self.logger.error(f"Liability extraction failed: {e}")
@@ -346,7 +506,7 @@ class FiscalFoxNetWorthAnalyzer:
         total_assets = max(sum(assets.values()), 1)
         total_liabilities = sum(liabilities.values())
         
-        # Credit analysis
+        # Credit analysis from structured data
         credit_score = 650
         credit_utilization = 0.0
         
@@ -361,17 +521,16 @@ class FiscalFoxNetWorthAnalyzer:
                 
                 # Credit utilization
                 accounts = credit_report.get('creditAccount', {}).get('creditAccountDetails', [])
-                total_limit = 0
                 total_outstanding = 0
+                total_limit = 0
                 
                 for account in accounts:
-                    limit = float(account.get('creditLimitAmount', 0))
-                    if limit == 0:
-                        limit = float(account.get('highestCreditOrOriginalLoanAmount', 0))
-                    
                     outstanding = float(account.get('currentBalance', 0))
-                    total_limit += limit
+                    # Estimate credit limit (you might need to add this column to your schema)
+                    estimated_limit = outstanding * 2  # Simple estimation
+                    
                     total_outstanding += outstanding
+                    total_limit += estimated_limit
                 
                 credit_utilization = total_outstanding / max(total_limit, 1)
                 
@@ -386,15 +545,15 @@ class FiscalFoxNetWorthAnalyzer:
             'debt_to_asset_ratio': total_liabilities / total_assets,
             'credit_score': credit_score,
             'credit_utilization': min(credit_utilization, 1.0),
-            'liquidity_ratio': assets.get('SAVINGS_ACCOUNTS', 0) / max(total_liabilities, 1),
-            'investment_ratio': (assets.get('MUTUAL_FUND', 0) + assets.get('SECURITIES', 0)) / total_assets
+            'liquidity_ratio': assets.get('BANK_DEPOSITS', 0) / max(total_liabilities, 1),
+            'investment_ratio': (assets.get('MUTUAL_FUNDS', 0) + assets.get('EPF_BALANCE', 0)) / total_assets
         }
         
         self.financial_ratios = ratios
         return ratios
 
     def analyze_investment_performance_robust(self) -> dict:
-        """Analyze investment performance"""
+        """Analyze investment performance from structured MF data"""
         performance = {
             'total_invested': 0,
             'current_value': 0,
@@ -404,16 +563,31 @@ class FiscalFoxNetWorthAnalyzer:
         }
         
         try:
-            net_worth_data = self.data.get('net_worth', {})
-            if 'mfSchemeAnalytics' in net_worth_data:
-                schemes = net_worth_data['mfSchemeAnalytics'].get('schemeAnalytics', [])
+            mf_data = self.data.get('mf_transactions', {})
+            if 'schemes' in mf_data:
+                schemes = mf_data['schemes']
                 
-                for scheme in schemes:
-                    scheme_data = self._process_scheme_safe(scheme)
-                    if scheme_data:
-                        performance['schemes'].append(scheme_data)
-                        performance['total_invested'] += scheme_data['invested']
-                        performance['current_value'] += scheme_data['current']
+                for isin, scheme_data in schemes.items():
+                    invested = scheme_data.get('total_invested', 0)
+                    units = scheme_data.get('total_units', 0)
+                    
+                    # Estimate current value (you might want to add current NAV to your data)
+                    # For now, using a simple estimation
+                    estimated_current = invested * 1.08  # Assuming 8% growth
+                    
+                    scheme_performance = {
+                        'name': scheme_data.get('scheme_name', 'Unknown Scheme'),
+                        'isin': isin,
+                        'invested': invested,
+                        'current': estimated_current,
+                        'returns': estimated_current - invested,
+                        'return_pct': ((estimated_current - invested) / invested * 100) if invested > 0 else 0,
+                        'units': units
+                    }
+                    
+                    performance['schemes'].append(scheme_performance)
+                    performance['total_invested'] += invested
+                    performance['current_value'] += estimated_current
                 
                 performance['total_returns'] = performance['current_value'] - performance['total_invested']
                 
@@ -423,37 +597,9 @@ class FiscalFoxNetWorthAnalyzer:
         
         return performance
 
-    def _process_scheme_safe(self, scheme: dict) -> dict:
-        """Process individual scheme safely"""
-        try:
-            details = scheme.get('enrichedAnalytics', {}).get('analytics', {}).get('schemeDetails', {})
-            
-            current_val = self.parse_currency_safe(details.get('currentValue', {}))
-            invested_val = self.parse_currency_safe(details.get('investedValue', {}))
-            xirr = details.get('XIRR', 0)
-            
-            # Handle missing invested value
-            if invested_val <= 0 and current_val > 0:
-                invested_val = current_val * 0.9
-                self.missing_data_fields.append(f"invested_value_{scheme.get('schemeDetail', {}).get('isinNumber', 'unknown')}")
-            
-            if current_val <= 0 and invested_val <= 0:
-                return None
-            
-            scheme_name = scheme.get('schemeDetail', {}).get('nameData', {}).get('longName', 'Unknown Scheme')
-            
-            return {
-                'name': scheme_name,
-                'invested': invested_val,
-                'current': current_val,
-                'returns': current_val - invested_val,
-                'return_pct': ((current_val - invested_val) / invested_val * 100) if invested_val > 0 else 0,
-                'xirr': xirr if isinstance(xirr, (int, float)) and not np.isnan(xirr) else 0
-            }
-            
-        except Exception as e:
-            self.logger.error(f"Scheme processing failed: {e}")
-            return None
+    # ... [Keep all the other methods exactly the same: generate_multi_timeframe_predictions, 
+    # advanced_ml_model, calculate_data_quality_score, analyze_with_error_handling, 
+    # store_results_in_bigquery, run_comprehensive_analysis, _display_results, etc.]
 
     def generate_multi_timeframe_predictions(self, timeframes: list = [3, 6, 9, 12, 24]) -> dict:
         """Generate rule-based predictions"""
@@ -736,8 +882,8 @@ class FiscalFoxNetWorthAnalyzer:
 
     def run_comprehensive_analysis(self, file_paths: Optional[Dict[str, str]] = None):
         """Main analysis function"""
-        print("🚀 Starting Fiscal Fox Net Worth Analysis...")
-        print(f"📁 Data Source: {'Local Files' if self.use_local_files else 'BigQuery'}")
+        print("🚀 Starting Fiscal Fox Net Worth Analysis (Structured Tables)...")
+        print(f"📁 Data Source: {'Local Files' if self.use_local_files else 'BigQuery Structured Tables'}")
         
         # Load data
         print(f"\n📥 Loading data for {self.master_uid}...")
@@ -794,7 +940,7 @@ class FiscalFoxNetWorthAnalyzer:
     def _display_results(self, results):
         """Display comprehensive results"""
         print("\n" + "=" * 70)
-        print("🦊 FISCAL FOX NET WORTH ANALYSIS RESULTS")
+        print("🦊 FISCAL FOX NET WORTH ANALYSIS RESULTS (Structured Data)")
         print("=" * 70)
         
         ratios = results['data']['ratios']
@@ -885,26 +1031,23 @@ def create_sample_data_files(data_path: str = "data/"):
     """Create sample data files for testing"""
     os.makedirs(data_path, exist_ok=True)
     
-    # Sample net worth data
+    # Sample net worth data (structured format)
     net_worth_sample = {
-        "netWorthResponse": {
-            "assetValues": [
-                {
-                    "netWorthAttribute": "ASSET_TYPE_BANK_DEPOSITS",
-                    "value": {"units": "500000", "nanos": 0}
-                },
-                {
-                    "netWorthAttribute": "ASSET_TYPE_MUTUAL_FUND",
-                    "value": {"units": "300000", "nanos": 0}
-                }
-            ],
-            "liabilityValues": [
-                {
-                    "netWorthAttribute": "LIABILITY_TYPE_CREDIT_CARD",
-                    "value": {"units": "50000", "nanos": 0}
-                }
-            ]
-        }
+        "assets": {
+            "BANK_DEPOSITS": 500000,
+            "MUTUAL_FUNDS": 300000
+        },
+        "liabilities": {
+            "CREDIT_CARD": 50000
+        },
+        "accounts": {
+            "acc_001": {
+                "account_type": "SAVINGS",
+                "bank_name": "HDFC Bank",
+                "balance": 250000
+            }
+        },
+        "total_net_worth": 750000
     }
     
     # Sample credit data
@@ -915,9 +1058,9 @@ def create_sample_data_files(data_path: str = "data/"):
                 "creditAccount": {
                     "creditAccountDetails": [
                         {
-                            "currentBalance": "25000",
-                            "creditLimitAmount": "100000",
-                            "amountPastDue": "0"
+                            "currentBalance": 25000,
+                            "amountPastDue": 0,
+                            "accountType": "Credit Card"
                         }
                     ]
                 }
@@ -949,7 +1092,7 @@ def main():
     
     # Parse command line arguments
     import argparse
-    parser = argparse.ArgumentParser(description='Fiscal Fox Net Worth Analyzer - Clean Version')
+    parser = argparse.ArgumentParser(description='Fiscal Fox Net Worth Analyzer - Structured Tables')
     parser.add_argument('--master_uid', default="ff_user_8a838f3528819407", help='Master UID')
     parser.add_argument('--use_local_files', action='store_true', help='Use local files instead of BigQuery')
     parser.add_argument('--data_path', default="data/", help='Path to local data files')
@@ -963,7 +1106,7 @@ def main():
         return
     
     # Standard Analysis Mode
-    print("🦊 Starting Fiscal Fox Net Worth Analyzer...")
+    print("🦊 Starting Fiscal Fox Net Worth Analyzer (Structured Tables)...")
     
     analyzer = FiscalFoxNetWorthAnalyzer(
         master_uid=args.master_uid,
