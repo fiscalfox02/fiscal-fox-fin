@@ -76,28 +76,28 @@ class FiscalFoxNetWorthAnalyzer:
         queries = {
             'net_worth': f"""
                 SELECT json_data 
-                FROM `{self.project_id}.{self.dataset_id}.net_worth_raw` 
+                FROM `{self.project_id}.{self.dataset_id}.net_worth_processed` 
                 WHERE master_uid = @master_uid
                 ORDER BY created_at DESC 
                 LIMIT 1
             """,
             'credit': f"""
                 SELECT json_data 
-                FROM `{self.project_id}.{self.dataset_id}.credit_report_raw` 
+                FROM `{self.project_id}.{self.dataset_id}.credit_report_processed` 
                 WHERE master_uid = @master_uid
                 ORDER BY created_at DESC 
                 LIMIT 1
             """,
             'mf_transactions': f"""
                 SELECT json_data 
-                FROM `{self.project_id}.{self.dataset_id}.mf_transactions_raw` 
+                FROM `{self.project_id}.{self.dataset_id}.mf_transactions_processed` 
                 WHERE master_uid = @master_uid
                 ORDER BY created_at DESC 
                 LIMIT 1
             """,
             'epf': f"""
                 SELECT json_data 
-                FROM `{self.project_id}.{self.dataset_id}.epf_details_raw` 
+                FROM `{self.project_id}.{self.dataset_id}.epf_details_processed` 
                 WHERE master_uid = @master_uid
                 ORDER BY created_at DESC 
                 LIMIT 1
