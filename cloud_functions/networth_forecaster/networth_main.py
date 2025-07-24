@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Complete Fiscal Fox Net Worth Analyzer
-Updated for networth_results and networth_webhook tables
+Enhanced Fiscal Fox Net Worth Analyzer
+Includes Federated Learning, Local File Support, and Privacy Features
 """
 
 import json
 import sys
+import os
 import hashlib
 import logging
 import pandas as pd
@@ -17,14 +18,49 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, r2_score
 from cryptography.fernet import Fernet
 import warnings
+import asyncio
+from typing import Dict, List, Optional, Union
 warnings.filterwarnings('ignore')
 
+# Federated Learning Imports
+try:
+    import tensorflow as tf
+    import tensorflow_federated as tff
+    FEDERATED_AVAILABLE = True
+except ImportError:
+    print("TensorFlow Federated not available. Install with: pip install tensorflow-federated")
+    FEDERATED_AVAILABLE = False
+
+try:
+    import flwr as fl
+    from flwr.client import NumPyClient
+    FLOWER_AVAILABLE = True
+except ImportError:
+    print("Flower not available. Install with: pip install flwr")
+    FLOWER_AVAILABLE = False
+
+
 class FiscalFoxNetWorthAnalyzer:
-    def __init__(self, master_uid: str = "ff_user_8a838f3528819407", enable_privacy: bool = True):
+    """Enhanced Net Worth Analyzer with Federated Learning and Local File Support"""
+    
+    def __init__(self, 
+                 master_uid: str = "ff_user_8a838f3528819407", 
+                 enable_privacy: bool = True,
+                 use_local_files: bool = False,
+                 local_data_path: str = "data/",
+                 institution_id: str = None,
+                 federated_mode: bool = False):
+        
         self.master_uid = master_uid
         self.project_id = "fiscal-fox-fin"
         self.dataset_id = "fiscal_master_dw"
         self.enable_privacy = enable_privacy
+        self.use_local_files = use_local_files
+        self.local_data_path = local_data_path
+        self.institution_id = institution_id or f"institution_{master_uid}"
+        self.federated_mode = federated_mode
+        
+        # Core data structures
         self.data = {}
         self.financial_ratios = {}
         self.validation_errors = []
@@ -36,23 +72,37 @@ class FiscalFoxNetWorthAnalyzer:
             self.encryption_key = Fernet.generate_key()
             self.cipher_suite = Fernet(self.encryption_key)
         
-        # Setup BigQuery client and logging
-        self.client = self._setup_bigquery_client()
+        # Federated learning components
+        self.local_model = None
+        self.global_model_weights = None
+        self.federated_client = None
+        
+        # Setup clients and logging
+        if not use_local_files:
+            self.client = self._setup_bigquery_client()
+        else:
+            self.client = None
+            
         self._setup_logging()
-    
+        
+        # Create data directory if using local files
+        if use_local_files:
+            os.makedirs(local_data_path, exist_ok=True)
+
     def _generate_analysis_id(self) -> str:
         """Generate unique analysis ID"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return f"{self.master_uid}_networth_analysis_{timestamp}"
+        fed_suffix = "_federated" if self.federated_mode else ""
+        return f"{self.master_uid}_networth_analysis_{timestamp}{fed_suffix}"
     
     def _setup_bigquery_client(self):
         """Initialize BigQuery client"""
         try:
             client = bigquery.Client(project=self.project_id)
-            print(f"Connected to BigQuery project: {self.project_id}")
+            print(f"✅ Connected to BigQuery project: {self.project_id}")
             return client
         except Exception as e:
-            print(f"Failed to connect to BigQuery: {e}")
+            print(f"❌ Failed to connect to BigQuery: {e}")
             return None
     
     def _setup_logging(self):
@@ -70,9 +120,11 @@ class FiscalFoxNetWorthAnalyzer:
         noise = np.random.laplace(0, scale)
         return max(0, value + noise)  # Ensure non-negative
 
-    def load_user_data_from_bigquery(self):
-        """Load user data from your existing BigQuery tables"""
-        
+    def load_user_data_from_bigquery(self) -> Dict:
+        """Load user data from BigQuery tables"""
+        if not self.client:
+            raise Exception("BigQuery client not initialized")
+            
         queries = {
             'net_worth': f"""
                 SELECT json_data 
@@ -108,7 +160,7 @@ class FiscalFoxNetWorthAnalyzer:
         
         for data_type, query in queries.items():
             try:
-                print(f"Loading {data_type} data for {self.master_uid}...")
+                print(f"📊 Loading {data_type} data for {self.master_uid}...")
                 
                 job_config = bigquery.QueryJobConfig(
                     query_parameters=[
@@ -121,17 +173,75 @@ class FiscalFoxNetWorthAnalyzer:
                 
                 for row in results:
                     user_data[data_type] = json.loads(row.json_data) if row.json_data else {}
-                    print(f"Loaded {data_type} data successfully")
+                    print(f"✅ Loaded {data_type} data successfully")
                     break
                 
                 if data_type not in user_data:
-                    print(f" No {data_type} data found for {self.master_uid}")
+                    print(f"⚠️ No {data_type} data found for {self.master_uid}")
                     user_data[data_type] = {}
                     
             except Exception as e:
-                print(f"Error loading {data_type}: {e}")
+                print(f"❌ Error loading {data_type}: {e}")
                 user_data[data_type] = {}
                 self.validation_errors.append(f"Failed to load {data_type}: {str(e)}")
+        
+        return user_data
+
+    def load_user_data_from_local_files(self, file_paths: Optional[Dict[str, str]] = None) -> Dict:
+        """Load user data from local JSON files"""
+        
+        # Default file paths
+        default_paths = {
+            'net_worth': os.path.join(self.local_data_path, 'fetch_net_worth.json'),
+            'credit': os.path.join(self.local_data_path, 'fetch_credit_report.json'),
+            'epf': os.path.join(self.local_data_path, 'fetch_epf_details.json'),
+            'mf_transactions': os.path.join(self.local_data_path, 'fetch_mf_transactions.json')
+        }
+        
+        # Use provided paths or defaults
+        data_sources = file_paths or default_paths
+        user_data = {}
+        
+        print(f"📁 Loading data from local files in {self.local_data_path}...")
+        
+        for data_type, file_path in data_sources.items():
+            try:
+                if os.path.exists(file_path):
+                    print(f"📊 Loading {data_type} from {file_path}...")
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        user_data[data_type] = json.load(f)
+                    print(f"✅ Loaded {data_type} data successfully")
+                else:
+                    print(f"⚠️ File not found: {file_path}")
+                    user_data[data_type] = {}
+                    self.missing_data_fields.append(f"local_file_{data_type}")
+                    
+            except Exception as e:
+                print(f"❌ Error loading {data_type} from {file_path}: {e}")
+                user_data[data_type] = {}
+                self.validation_errors.append(f"Failed to load local {data_type}: {str(e)}")
+        
+        return user_data
+
+    def load_user_data(self, file_paths: Optional[Dict[str, str]] = None) -> Dict:
+        """Main data loading method with fallback support"""
+        
+        if self.use_local_files:
+            # Primary: Load from local files
+            user_data = self.load_user_data_from_local_files(file_paths)
+        else:
+            try:
+                # Primary: Load from BigQuery
+                user_data = self.load_user_data_from_bigquery()
+            except Exception as e:
+                print(f"⚠️ BigQuery loading failed: {e}")
+                print("🔄 Falling back to local files...")
+                self.use_local_files = True
+                user_data = self.load_user_data_from_local_files(file_paths)
+        
+        # Validate data quality
+        total_loaded = sum(1 for data in user_data.values() if data)
+        print(f"📈 Data Quality: {total_loaded}/4 data sources loaded")
         
         self.data = user_data
         return user_data
@@ -516,13 +626,17 @@ class FiscalFoxNetWorthAnalyzer:
         return max(0.0, min(100.0, score))
 
     def analyze_with_error_handling(self) -> dict:
-        """Main analysis with comprehensive error handling - THE MISSING METHOD"""
+        """Main analysis with comprehensive error handling"""
         analysis_result = {
             'success': False,
             'data': {},
             'errors': [],
             'warnings': [],
-            'data_quality_score': 0
+            'data_quality_score': 0,
+            'federated_info': {
+                'mode': self.federated_mode,
+                'institution_id': self.institution_id
+            }
         }
         
         try:
@@ -567,6 +681,10 @@ class FiscalFoxNetWorthAnalyzer:
 
     def store_results_in_bigquery(self, analysis_result: dict) -> str:
         """Store net worth results in BigQuery with correct table names"""
+        
+        if not self.client:
+            print("⚠️ BigQuery client not available, skipping storage")
+            return None
         
         # Updated table names for net worth
         results_table_id = f"{self.project_id}.{self.dataset_id}.networth_results"
@@ -641,60 +759,91 @@ class FiscalFoxNetWorthAnalyzer:
             query_job = self.client.query(merge_query, job_config=job_config)
             query_job.result()
             
-            print(f"Results stored successfully for {self.master_uid}")
+            print(f"✅ Results stored successfully for {self.master_uid}")
             return self.analysis_id
             
         except Exception as e:
             self.logger.error(f"Failed to store results: {e}")
             return None
 
-    def run_comprehensive_analysis(self):
+    def run_comprehensive_analysis(self, file_paths: Optional[Dict[str, str]] = None):
         """Main analysis function"""
-        print("Starting Fiscal Fox Net Worth Analysis...")
-        
+        print("🚀 Starting Enhanced Fiscal Fox Net Worth Analysis...")
+        print(f"📊 Mode: {'Federated' if self.federated_mode else 'Centralized'}")
+        print(f"📁 Data Source: {'Local Files' if self.use_local_files else 'BigQuery'}")
         
         # Load data
-        print(f"\nLoading data for {self.master_uid}...")
-        user_data = self.load_user_data_from_bigquery()
+        print(f"\n📥 Loading data for {self.master_uid}...")
+        user_data = self.load_user_data(file_paths)
         
         if not any(user_data.values()):
-            print("No data found. Please check your master_uid or data tables.")
+            print("❌ No data found. Please check your data sources.")
             return None
         
         # Run analysis
-        print("\n Running comprehensive net worth analysis...")
+        print("\n🔬 Running comprehensive net worth analysis...")
         analysis_result = self.analyze_with_error_handling()
         
         if not analysis_result['success']:
-            print(f" Analysis failed: {analysis_result['errors']}")
+            print(f"❌ Analysis failed: {analysis_result['errors']}")
             return None
         
         # Display results
         self._display_results(analysis_result)
         
-        # Store in BigQuery
-        print(f"\n Storing results in BigQuery...")
-        result_id = self.store_results_in_bigquery(analysis_result)
-        
-        if result_id:
-            print(f" Net Worth Analysis completed! Result ID: {result_id}")
+        # Store in BigQuery (if available)
+        if not self.use_local_files:
+            print(f"\n💾 Storing results in BigQuery...")
+            result_id = self.store_results_in_bigquery(analysis_result)
+            
+            if result_id:
+                print(f"✅ Net Worth Analysis completed! Result ID: {result_id}")
+        else:
+            print(f"\n💾 Saving results to local file...")
+            self._save_results_locally(analysis_result)
         
         return analysis_result
 
+    def _save_results_locally(self, analysis_result: dict):
+        """Save analysis results to local JSON file"""
+        try:
+            results_file = os.path.join(self.local_data_path, f"analysis_results_{self.analysis_id}.json")
+            
+            # Add metadata
+            analysis_result['metadata'] = {
+                'analysis_id': self.analysis_id,
+                'timestamp': datetime.utcnow().isoformat(),
+                'master_uid': self.master_uid,
+                'institution_id': self.institution_id,
+                'federated_mode': self.federated_mode
+            }
+            
+            with open(results_file, 'w', encoding='utf-8') as f:
+                json.dump(analysis_result, f, indent=2, default=str)
+            
+            print(f"✅ Results saved to: {results_file}")
+            
+        except Exception as e:
+            print(f"❌ Failed to save results locally: {e}")
+
     def _display_results(self, results):
         """Display comprehensive results"""
-        print("\n" + "=" * 60)
-        print(" FISCAL FOX NET WORTH ANALYSIS RESULTS")
-        print("=" * 60)
+        print("\n" + "=" * 70)
+        print("🦊 ENHANCED FISCAL FOX NET WORTH ANALYSIS RESULTS")
+        print("=" * 70)
         
         ratios = results['data']['ratios']
-        print(f"\nCURRENT NET WORTH POSITION:")
+        print(f"\n💰 CURRENT NET WORTH POSITION:")
         print(f"• Net Worth: ₹{ratios['net_worth']:,.2f}")
         print(f"• Total Assets: ₹{ratios['total_assets']:,.2f}")
         print(f"• Total Liabilities: ₹{ratios['total_liabilities']:,.2f}")
         print(f"• Data Quality Score: {results['data_quality_score']:.1f}/100")
         
-        print(f"\n KEY FINANCIAL RATIOS:")
+        if self.federated_mode:
+            print(f"• Institution ID: {self.institution_id}")
+            print(f"• Privacy Protection: {'Enabled' if self.enable_privacy else 'Disabled'}")
+        
+        print(f"\n📊 KEY FINANCIAL RATIOS:")
         print(f"• Debt-to-Asset Ratio: {ratios['debt_to_asset_ratio']:.2%}")
         print(f"• Credit Score: {ratios['credit_score']:.0f}")
         print(f"• Credit Utilization: {ratios['credit_utilization']:.2%}")
@@ -704,50 +853,313 @@ class FiscalFoxNetWorthAnalyzer:
         investment_perf = results['data']['investment_performance']
         if investment_perf['total_invested'] > 0:
             roi = (investment_perf['total_returns'] / investment_perf['total_invested']) * 100
-            print(f"\nINVESTMENT PERFORMANCE:")
+            print(f"\n📈 INVESTMENT PERFORMANCE:")
             print(f"• Total Invested: ₹{investment_perf['total_invested']:,.2f}")
             print(f"• Current Value: ₹{investment_perf['current_value']:,.2f}")
             print(f"• Total Returns: ₹{investment_perf['total_returns']:,.2f}")
             print(f"• Overall ROI: {roi:.2f}%")
         
         # Rule-based predictions
-        print(f"\n RULE-BASED NET WORTH PREDICTIONS:")
+        print(f"\n🎯 RULE-BASED NET WORTH PREDICTIONS:")
         for timeframe, scenarios in results['data']['rule_based_predictions'].items():
             print(f"\n{timeframe.replace('_', ' ').title()}:")
             for scenario, values in scenarios.items():
                 print(f"  • {scenario}: ₹{values['net_worth']:,.0f} ({values['growth_percentage']:+.1f}%)")
         
         # ML predictions
-        print(f"\n ML NET WORTH PREDICTIONS:")
+        print(f"\n🤖 ML NET WORTH PREDICTIONS:")
         for period, prediction in results['data']['ml_predictions'].items():
             print(f"• {period.replace('_', ' ').title()}: ₹{prediction:,.2f}")
         
         # Data quality issues
         if self.validation_errors or self.missing_data_fields:
-            print(f"\n DATA QUALITY ISSUES:")
+            print(f"\n⚠️ DATA QUALITY ISSUES:")
             for error in self.validation_errors:
                 print(f"• {error}")
             if self.missing_data_fields:
                 print(f"• Missing data fields: {len(self.missing_data_fields)}")
 
 
-def get_latest_networth_results(master_uid: str = "ff_user_8a838f3528819407"):
+# =============================================================================
+# FEDERATED LEARNING COMPONENTS
+# =============================================================================
+
+class FederatedNetWorthServer:
+    """Federated Learning Server for Net Worth Analysis"""
+    
+    def __init__(self, project_id: str = "fiscal-fox-fin"):
+        self.project_id = project_id
+        self.participating_institutions = []
+        self.training_rounds = 0
+        self.global_model = None
+        
+        if FEDERATED_AVAILABLE:
+            self._initialize_federated_model()
+        else:
+            print("⚠️ TensorFlow Federated not available")
+
+    def _initialize_federated_model(self):
+        """Initialize federated learning model"""
+        def model_fn():
+            model = tf.keras.Sequential([
+                tf.keras.layers.Dense(64, activation='relu', input_shape=(8,)),
+                tf.keras.layers.Dropout(0.2),
+                tf.keras.layers.Dense(32, activation='relu'),
+                tf.keras.layers.Dropout(0.1),
+                tf.keras.layers.Dense(16, activation='relu'),
+                tf.keras.layers.Dense(1, activation='linear')  # Net worth prediction
+            ])
+            
+            return tff.learning.models.from_keras_model(
+                model,
+                input_spec=tf.TensorSpec([None, 8], tf.float32),
+                loss=tf.keras.losses.MeanSquaredError(),
+                metrics=[tf.keras.metrics.MeanAbsoluteError()]
+            )
+        
+        self.model_fn = model_fn
+
+    def add_institution(self, institution_id: str, analyzer: FiscalFoxNetWorthAnalyzer):
+        """Add institution to federated training"""
+        self.participating_institutions.append({
+            'id': institution_id,
+            'analyzer': analyzer,
+            'data_quality': analyzer.calculate_data_quality_score()
+        })
+        print(f"✅ Added institution {institution_id} to federated network")
+
+    def create_federated_dataset(self, analyzer: FiscalFoxNetWorthAnalyzer):
+        """Create federated dataset from analyzer"""
+        if not analyzer.financial_ratios:
+            # Run basic analysis to get ratios
+            assets = analyzer.extract_assets_robust()
+            liabilities = analyzer.extract_liabilities_robust()
+            analyzer.calculate_financial_ratios_safe(assets, liabilities)
+        
+        ratios = analyzer.financial_ratios
+        
+        # Feature engineering for federated learning
+        features = [
+            ratios['debt_to_asset_ratio'],
+            ratios['credit_score'] / 900.0,  # Normalize
+            np.log(ratios['total_assets']) / 20.0,  # Log normalize
+            ratios['credit_utilization'],
+            ratios['investment_ratio'],
+            ratios['liquidity_ratio'],
+            1.0 if ratios['total_assets'] > 1000000 else 0.0,  # High net worth flag
+            ratios['total_liabilities'] / max(ratios['total_assets'], 1)  # Another debt ratio
+        ]
+        
+        # Target: normalized net worth growth potential
+        target = np.log(max(ratios['net_worth'], 1)) / 20.0
+        
+        return tf.data.Dataset.from_tensor_slices({
+            'x': tf.constant([features], dtype=tf.float32),
+            'y': tf.constant([target], dtype=tf.float32)
+        }).batch(1)
+
+    def run_federated_training(self, num_rounds: int = 5):
+        """Run federated training across institutions"""
+        if not FEDERATED_AVAILABLE:
+            print("❌ TensorFlow Federated not available")
+            return None
+        
+        print(f"🚀 Starting federated training with {len(self.participating_institutions)} institutions")
+        
+        # Create federated data
+        federated_train_data = []
+        for institution in self.participating_institutions:
+            dataset = self.create_federated_dataset(institution['analyzer'])
+            federated_train_data.append(dataset)
+        
+        # Build federated averaging process
+        iterative_process = tff.learning.algorithms.build_weighted_fed_avg(
+            model_fn=self.model_fn,
+            client_optimizer_fn=lambda: tf.keras.optimizers.Adam(0.01),
+            server_optimizer_fn=lambda: tf.keras.optimizers.Adam(1.0)
+        )
+        
+        # Initialize the process
+        state = iterative_process.initialize()
+        
+        # Run training rounds
+        for round_num in range(num_rounds):
+            print(f"\n🔄 Training Round {round_num + 1}/{num_rounds}")
+            
+            result = iterative_process.next(state, federated_train_data)
+            state = result.state
+            metrics = result.metrics
+            
+            print(f"📊 Round {round_num + 1} Metrics:")
+            if 'client_work' in metrics:
+                if 'train' in metrics['client_work']:
+                    train_metrics = metrics['client_work']['train']
+                    print(f"  • Training Loss: {train_metrics.get('loss', 'N/A'):.4f}")
+                    print(f"  • Mean Absolute Error: {train_metrics.get('mean_absolute_error', 'N/A'):.4f}")
+            
+            self._store_federated_round_results(round_num, metrics)
+        
+        self.training_rounds = num_rounds
+        print(f"✅ Federated training completed after {num_rounds} rounds")
+        return state
+
+    def _store_federated_round_results(self, round_num: int, metrics: dict):
+        """Store federated training round results"""
+        try:
+            client = bigquery.Client(project=self.project_id)
+            
+            # Extract metrics safely
+            train_loss = 0.0
+            train_mae = 0.0
+            
+            if 'client_work' in metrics and 'train' in metrics['client_work']:
+                train_metrics = metrics['client_work']['train']
+                train_loss = float(train_metrics.get('loss', 0.0))
+                train_mae = float(train_metrics.get('mean_absolute_error', 0.0))
+            
+            row_data = {
+                'round_number': round_num + 1,
+                'timestamp': datetime.utcnow(),
+                'training_loss': train_loss,
+                'training_mae': train_mae,
+                'participating_institutions': len(self.participating_institutions),
+                'model_version': f'federated_networth_v{round_num + 1}',
+                'institution_ids': json.dumps([inst['id'] for inst in self.participating_institutions])
+            }
+            
+            table_id = f"{self.project_id}.fiscal_master_dw.federated_training_results"
+            errors = client.insert_rows_json(table_id, [row_data])
+            
+            if errors:
+                print(f"⚠️ Error storing federated round results: {errors}")
+            else:
+                print(f"💾 Stored round {round_num + 1} results")
+                
+        except Exception as e:
+            print(f"⚠️ Failed to store federated results: {e}")
+
+
+class FederatedNetWorthClient(NumPyClient):
+    """Federated Learning Client using Flower"""
+    
+    def __init__(self, analyzer: FiscalFoxNetWorthAnalyzer):
+        self.analyzer = analyzer
+        self.model = self._create_local_model()
+        
+    def _create_local_model(self):
+        """Create local TensorFlow model"""
+        model = tf.keras.Sequential([
+            tf.keras.layers.Dense(64, activation='relu', input_shape=(8,)),
+            tf.keras.layers.Dropout(0.2),
+            tf.keras.layers.Dense(32, activation='relu'),
+            tf.keras.layers.Dropout(0.1),
+            tf.keras.layers.Dense(16, activation='relu'),
+            tf.keras.layers.Dense(1, activation='linear')
+        ])
+        
+        model.compile(
+            optimizer='adam',
+            loss='mse',
+            metrics=['mae']
+        )
+        
+        return model
+    
+    def get_parameters(self, config):
+        """Return current local model parameters"""
+        return self.model.get_weights()
+    
+    def set_parameters(self, parameters):
+        """Update local model with global parameters"""
+        self.model.set_weights(parameters)
+    
+    def fit(self, parameters, config):
+        """Train model on local data"""
+        self.set_parameters(parameters)
+        
+        # Prepare training data
+        X, y = self._prepare_training_data()
+        
+        if self.analyzer.enable_privacy:
+            X, y = self._apply_differential_privacy(X, y)
+        
+        # Train locally
+        history = self.model.fit(X, y, epochs=1, batch_size=1, verbose=0)
+        
+        return (
+            self.get_parameters(config),
+            len(X),
+            {"loss": history.history["loss"][0], "mae": history.history["mae"][0]}
+        )
+    
+    def _prepare_training_data(self):
+        """Prepare training data from analyzer"""
+        if not self.analyzer.financial_ratios:
+            assets = self.analyzer.extract_assets_robust()
+            liabilities = self.analyzer.extract_liabilities_robust()
+            self.analyzer.calculate_financial_ratios_safe(assets, liabilities)
+        
+        ratios = self.analyzer.financial_ratios
+        
+        features = np.array([[
+            ratios['debt_to_asset_ratio'],
+            ratios['credit_score'] / 900.0,
+            np.log(ratios['total_assets']) / 20.0,
+            ratios['credit_utilization'],
+            ratios['investment_ratio'],
+            ratios['liquidity_ratio'],
+            1.0 if ratios['total_assets'] > 1000000 else 0.0,
+            ratios['total_liabilities'] / max(ratios['total_assets'], 1)
+        ]])
+        
+        targets = np.array([np.log(max(ratios['net_worth'], 1)) / 20.0])
+        
+        return features, targets
+    
+    def _apply_differential_privacy(self, X, y, epsilon=1.0):
+        """Apply differential privacy to training data"""
+        # Add Laplace noise
+        X_sensitivity = np.std(X, axis=0)
+        X_noise_scale = X_sensitivity / epsilon
+        X_noisy = X + np.random.laplace(0, X_noise_scale, X.shape)
+        
+        y_sensitivity = np.std(y)
+        y_noise_scale = y_sensitivity / epsilon
+        y_noisy = y + np.random.laplace(0, y_noise_scale, y.shape)
+        
+        return X_noisy, y_noisy
+    
+    def evaluate(self, parameters, config):
+        """Evaluate model on local test data"""
+        self.set_parameters(parameters)
+        
+        X, y = self._prepare_training_data()
+        loss, mae = self.model.evaluate(X, y, verbose=0)
+        
+        return loss, len(X), {"mae": mae}
+
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
+def get_latest_networth_results(master_uid: str = "ff_user_8a838f3528819407") -> dict:
     """Webhook function to get latest net worth results"""
     
-    client = bigquery.Client(project="fiscal-fox-fin")
-    
-    query = f"""
-        SELECT * FROM `fiscal-fox-fin.fiscal_master_dw.networth_webhook`
-        WHERE master_uid = @master_uid
-    """
-    
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ScalarQueryParameter("master_uid", "STRING", master_uid)
-        ]
-    )
-    
     try:
+        client = bigquery.Client(project="fiscal-fox-fin")
+        
+        query = f"""
+            SELECT * FROM `fiscal-fox-fin.fiscal_master_dw.networth_webhook`
+            WHERE master_uid = @master_uid
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("master_uid", "STRING", master_uid)
+            ]
+        )
+        
         query_job = client.query(query, job_config=job_config)
         results = query_job.result()
         
@@ -767,13 +1179,153 @@ def get_latest_networth_results(master_uid: str = "ff_user_8a838f3528819407"):
         return {'error': f'Failed to fetch net worth results: {str(e)}'}
 
 
-if __name__ == "__main__":
-    # Get master_uid from command line or use default
-    master_uid = sys.argv[1] if len(sys.argv) > 1 else "ff_user_8a838f3528819407"
+def create_sample_data_files(data_path: str = "data/"):
+    """Create sample data files for testing"""
+    os.makedirs(data_path, exist_ok=True)
     
-    # Run the analysis
-    analyzer = FiscalFoxNetWorthAnalyzer(master_uid=master_uid)
+    # Sample net worth data
+    net_worth_sample = {
+        "netWorthResponse": {
+            "assetValues": [
+                {
+                    "netWorthAttribute": "ASSET_TYPE_BANK_DEPOSITS",
+                    "value": {"units": "500000", "nanos": 0}
+                },
+                {
+                    "netWorthAttribute": "ASSET_TYPE_MUTUAL_FUND",
+                    "value": {"units": "300000", "nanos": 0}
+                }
+            ],
+            "liabilityValues": [
+                {
+                    "netWorthAttribute": "LIABILITY_TYPE_CREDIT_CARD",
+                    "value": {"units": "50000", "nanos": 0}
+                }
+            ]
+        }
+    }
+    
+    # Sample credit data
+    credit_sample = {
+        "creditReports": [{
+            "creditReportData": {
+                "score": {"bureauScore": "750"},
+                "creditAccount": {
+                    "creditAccountDetails": [
+                        {
+                            "currentBalance": "25000",
+                            "creditLimitAmount": "100000",
+                            "amountPastDue": "0"
+                        }
+                    ]
+                }
+            }
+        }]
+    }
+    
+    # Save sample files
+    with open(os.path.join(data_path, "fetch_net_worth.json"), "w") as f:
+        json.dump(net_worth_sample, f, indent=2)
+    
+    with open(os.path.join(data_path, "fetch_credit_report.json"), "w") as f:
+        json.dump(credit_sample, f, indent=2)
+    
+    # Create empty files for missing data
+    for filename in ["fetch_epf_details.json", "fetch_mf_transactions.json"]:
+        with open(os.path.join(data_path, filename), "w") as f:
+            json.dump({}, f)
+    
+    print(f"✅ Sample data files created in {data_path}")
+
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+def main():
+    """Main execution function with multiple run modes"""
+    
+    # Parse command line arguments
+    import argparse
+    parser = argparse.ArgumentParser(description='Enhanced Fiscal Fox Net Worth Analyzer')
+    parser.add_argument('--master_uid', default="ff_user_8a838f3528819407", help='Master UID')
+    parser.add_argument('--use_local_files', action='store_true', help='Use local files instead of BigQuery')
+    parser.add_argument('--data_path', default="data/", help='Path to local data files')
+    parser.add_argument('--federated', action='store_true', help='Enable federated learning mode')
+    parser.add_argument('--institution_id', help='Institution ID for federated learning')
+    parser.add_argument('--create_sample_data', action='store_true', help='Create sample data files')
+    parser.add_argument('--server_mode', action='store_true', help='Run as federated server')
+    parser.add_argument('--client_mode', action='store_true', help='Run as federated client')
+    
+    args = parser.parse_args()
+    
+    # Create sample data if requested
+    if args.create_sample_data:
+        create_sample_data_files(args.data_path)
+        return
+    
+    # Federated Server Mode
+    if args.server_mode and args.federated:
+        print("🖥️ Starting Federated Learning Server...")
+        server = FederatedNetWorthServer()
+        
+        # Example: Add multiple institutions
+        institution_ids = ["bank_a", "bank_b", "credit_union_c"]
+        for inst_id in institution_ids:
+            analyzer = FiscalFoxNetWorthAnalyzer(
+                master_uid=f"ff_user_{inst_id}",
+                federated_mode=True,
+                institution_id=inst_id,
+                use_local_files=args.use_local_files,
+                local_data_path=args.data_path
+            )
+            analyzer.load_user_data()
+            server.add_institution(inst_id, analyzer)
+        
+        # Run federated training
+        server.run_federated_training(num_rounds=3)
+        return
+    
+    # Federated Client Mode
+    if args.client_mode and args.federated and FLOWER_AVAILABLE:
+        print("📱 Starting Federated Learning Client...")
+        analyzer = FiscalFoxNetWorthAnalyzer(
+            master_uid=args.master_uid,
+            federated_mode=True,
+            institution_id=args.institution_id,
+            use_local_files=args.use_local_files,
+            local_data_path=args.data_path
+        )
+        analyzer.load_user_data()
+        
+        client = FederatedNetWorthClient(analyzer)
+        fl.client.start_numpy_client(server_address="[::]:8080", client=client)
+        return
+    
+    # Standard Analysis Mode
+    print("🦊 Starting Enhanced Fiscal Fox Net Worth Analyzer...")
+    
+    analyzer = FiscalFoxNetWorthAnalyzer(
+        master_uid=args.master_uid,
+        use_local_files=args.use_local_files,
+        local_data_path=args.data_path,
+        federated_mode=args.federated,
+        institution_id=args.institution_id
+    )
+    
+    # Run comprehensive analysis
     results = analyzer.run_comprehensive_analysis()
     
-    print(f"\n🔗 To get results via webhook, call:")
-    print(f"get_latest_networth_results('{master_uid}')")
+    if results:
+        print(f"\n🔗 Analysis completed successfully!")
+        print(f"📊 Net Worth: ₹{results['data']['ratios']['net_worth']:,.2f}")
+        print(f"🎯 Data Quality: {results['data_quality_score']:.1f}/100")
+        
+        if not args.use_local_files:
+            print(f"\n🌐 To get results via webhook, call:")
+            print(f"get_latest_networth_results('{args.master_uid}')")
+
+
+if __name__ == "__main__":
+    main()
+
