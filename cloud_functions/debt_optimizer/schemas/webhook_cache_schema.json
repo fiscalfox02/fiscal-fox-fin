@@ -1,0 +1,9 @@
+[
+  {"name": "user_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "cache_key", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "webhook_response", "type": "JSON", "mode": "NULLABLE"},
+  {"name": "response_summary", "type": "JSON", "mode": "NULLABLE"},
+  {"name": "cache_timestamp", "type": "TIMESTAMP", "mode": "NULLABLE"},
+  {"name": "expiry_timestamp", "type": "TIMESTAMP", "mode": "NULLABLE"},
+  {"name": "hit_count", "type": "INTEGER", "mode": "NULLABLE"}
+]
