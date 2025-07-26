@@ -1,0 +1,23 @@
+gcp:
+  project_id: "fiscal-fox-fin"
+  region: "us-central1"
+
+bigquery:
+  dataset_id: "debt_analytics"
+  location: "US"
+
+optimization:
+  min_emergency_fund_months: 6
+  max_debt_to_income_ratio: 0.35
+  high_interest_threshold: 0.12
+  enable_detailed_analysis: true
+
+api:
+  timeout_seconds: 30
+  max_debts_per_user: 20
+
+logging:
+  level: "INFO"
+
+security:
+  require_authentication: true
