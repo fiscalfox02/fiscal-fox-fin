@@ -1,0 +1,15 @@
+[
+  {"name": "user_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "optimization_id", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "analysis_timestamp", "type": "TIMESTAMP", "mode": "NULLABLE"},
+  {"name": "financial_strength_score", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "total_debt", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "net_worth", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "available_surplus", "type": "FLOAT64", "mode": "NULLABLE"},
+  {"name": "debt_priorities", "type": "JSON", "mode": "NULLABLE"},
+  {"name": "recommendations", "type": "JSON", "mode": "NULLABLE"},
+  {"name": "asset_analysis", "type": "JSON", "mode": "NULLABLE"},
+  {"name": "optimization_strategy", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "projected_payoff_months", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "total_interest_savings", "type": "FLOAT64", "mode": "NULLABLE"}
+]
